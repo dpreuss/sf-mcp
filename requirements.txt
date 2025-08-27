@@ -1,0 +1,18 @@
+# MCP Framework
+mcp>=1.0.0
+
+# HTTP client
+aiohttp>=3.9.0
+aiofiles>=24.1.0
+
+# Environment and configuration
+python-dotenv>=1.0.0
+
+# Date/time handling
+python-dateutil>=2.8.0
+
+# JSON validation and schema
+pydantic>=2.0.0
+
+# Logging
+structlog>=24.1.0
