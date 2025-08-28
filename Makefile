@@ -110,13 +110,64 @@ check-integration-env:  ## Check integration test environment
 docs:  ## Generate documentation (placeholder)
 	@echo "Documentation generation not implemented yet"
 
+# TESTING COMMANDS - MANDATORY FOR ALL DEVELOPMENT
+
+# Core testing commands
+test:  ## Run all unit tests (MANDATORY before committing)
+	@echo "🧪 Running all unit tests..."
+	pytest tests/ -v --tb=short -x --ignore=tests/test_integration*.py
+
+test-unit:  ## Run unit tests only (alias for test)
+	@$(MAKE) test
+
+test-integration:  ## Run integration tests against real Starfish API
+	@echo "🌐 Running integration tests..."
+	@$(MAKE) check-integration-env
+	pytest tests/test_integration*.py -v -m integration --tb=short
+
+test-modular:  ## Test new modular architecture specifically
+	@echo "🏗️  Testing modular tools architecture..."
+	pytest tests/test_tools_modular.py tests/test_query_builder.py -v
+
+test-watch:  ## Auto-run tests on file changes (development)
+	@echo "👁️  Watching for changes... (Ctrl+C to stop)"
+	pytest-watch tests/ --verbose --tb=short --ignore=tests/test_integration*.py
+
+test-specific:  ## Run specific test file (usage: make test-specific FILE=test_tools_modular.py)
+	@if [ -z "$(FILE)" ]; then \
+		echo "❌ Usage: make test-specific FILE=test_tools_modular.py"; \
+		exit 1; \
+	fi
+	pytest tests/$(FILE) -v
+
+test-failed:  ## Re-run only failed tests from last run
+	pytest --lf -v
+
+# Coverage and quality
+coverage:  ## Generate test coverage report
+	@echo "📊 Generating coverage report..."
+	pytest tests/ --cov=starfish_mcp --cov-report=html --cov-report=term --ignore=tests/test_integration*.py
+	@echo "📄 Coverage report: htmlcov/index.html"
+
+coverage-integration:  ## Coverage including integration tests
+	@echo "📊 Generating coverage with integration tests..."
+	@$(MAKE) check-integration-env
+	pytest tests/ --cov=starfish_mcp --cov-report=html --cov-report=term
+
 # Development workflow shortcuts
 quick-test:  ## Quick test - run fastest tests only
-	pytest tests/test_models.py tests/test_config.py -v
+	pytest tests/test_models.py tests/test_config.py -v --tb=short
 
-full-check: quality test  ## Run full quality checks and tests
+test-query-builder:  ## Test query builder specifically (for parameter development)
+	pytest tests/test_query_builder.py -v
 
-ci: quality test-unit  ## Run CI pipeline (quality + unit tests)
+# MANDATORY: Full check before committing
+check: quality test coverage  ## 🚨 MANDATORY: Run full checks before committing
+	@echo "✅ All checks passed! Safe to commit."
+
+full-check: check test-integration  ## Complete check including integration tests
+
+ci: quality test coverage  ## Run CI pipeline (quality + unit tests + coverage)
 
 # Debugging helpers
 debug-config:  ## Debug configuration loading

@@ -134,7 +134,9 @@ def sample_volumes() -> List[Dict[str, Any]]:
                 "agent1.example.com": "rw,sync",
                 "agent2.example.com": "rw,sync"
             },
-            "type": "nfs"
+            "type": "nfs",
+            "default_agent_address": "agent1.example.com",
+            "root": "/mnt/storage1"
         },
         {
             "id": 2,
@@ -148,7 +150,9 @@ def sample_volumes() -> List[Dict[str, Any]]:
                 "agent1.example.com": "ro",
                 "agent3.example.com": "ro"
             },
-            "type": "nfs"
+            "type": "nfs",
+            "default_agent_address": "agent1.example.com",
+            "root": "/mnt/archive"
         }
     ]
 
@@ -266,23 +270,22 @@ class MockStarfishClient:
         self.request_log: List[Dict[str, Any]] = []
         
     async def query(self, query: str, format_fields: str = None, 
-                   limit: int = 1000, sort_by: str = None) -> StarfishQueryResponse:
+                   limit: int = 1000, sort_by: str = None,
+                   volumes_and_paths: str = None) -> List[StarfishEntry]:
         """Mock query method."""
         self.request_log.append({
             "method": "query",
             "query": query,
             "format_fields": format_fields,
             "limit": limit,
-            "sort_by": sort_by
+            "sort_by": sort_by,
+            "volumes_and_paths": volumes_and_paths
         })
         
         # Filter entries based on query
         filtered_entries = self._filter_entries(query)
         
-        return StarfishQueryResponse(
-            entries=[StarfishEntry(**entry) for entry in filtered_entries],
-            total=len(filtered_entries)
-        )
+        return [StarfishEntry(**entry) for entry in filtered_entries]
     
     async def list_volumes(self) -> List[VolumeInfo]:
         """Mock list volumes method."""
