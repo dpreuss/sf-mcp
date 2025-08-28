@@ -96,6 +96,30 @@ class StarfishTools:
                             "description": "Specific inode number to find"
                         },
                         
+                        # File size and links
+                        "size": {
+                            "type": "string",
+                            "description": "File size filter. Examples: '100' (exact), '10M-2G' (range), '>1GB', '<=500MB', 'eq:100KB', 'gt:1MB'"
+                        },
+                        "nlinks": {
+                            "type": "string", 
+                            "description": "Hard link count filter. Examples: '1' (exact), '2-5' (range), 'gte:3', 'lt:10'"
+                        },
+                        
+                        # Case-insensitive versions
+                        "iname": {
+                            "type": "string",
+                            "description": "Case-insensitive filename pattern. Examples: 'CONFIG.json', 'readme.*'"
+                        },
+                        "iusername": {
+                            "type": "string",
+                            "description": "Case-insensitive username match. Examples: 'ADMIN', 'John'"
+                        },
+                        "igroupname": {
+                            "type": "string",
+                            "description": "Case-insensitive group name match. Examples: 'WHEEL', 'Users'"
+                        },
+                        
                         # Directory depth
                         "depth": {
                             "type": "integer",
@@ -244,6 +268,11 @@ class StarfishTools:
         groupname = arguments.get("groupname")
         groupname_regex = arguments.get("groupname_regex")
         inode = arguments.get("inode")
+        size = arguments.get("size")
+        nlinks = arguments.get("nlinks")
+        iname = arguments.get("iname")
+        iusername = arguments.get("iusername")
+        igroupname = arguments.get("igroupname")
         depth = arguments.get("depth")
         maxdepth = arguments.get("maxdepth")
         tag = arguments.get("tag")
@@ -322,6 +351,23 @@ class StarfishTools:
             if not groupname_regex.startswith('^'):
                 groupname_regex = '^' + groupname_regex
             query_parts.append(f"groupname-re={groupname_regex}")
+        
+        # Size and links
+        if size:
+            query_parts.append(f"size={size}")
+        
+        if nlinks:
+            query_parts.append(f"nlinks={nlinks}")
+        
+        # Case-insensitive versions
+        if iname:
+            query_parts.append(f"iname={iname}")
+        
+        if iusername:
+            query_parts.append(f"iusername={iusername}")
+        
+        if igroupname:
+            query_parts.append(f"igroupname={igroupname}")
         
         # Depth
         if depth is not None:
@@ -424,6 +470,11 @@ class StarfishTools:
                         "groupname": groupname,
                         "groupname_regex": groupname_regex,
                         "inode": inode,
+                        "size": size,
+                        "nlinks": nlinks,
+                        "iname": iname,
+                        "iusername": iusername,
+                        "igroupname": igroupname,
                         "depth": depth,
                         "maxdepth": maxdepth,
                         "tag": tag,
