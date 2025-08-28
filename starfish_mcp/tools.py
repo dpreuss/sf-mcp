@@ -4,10 +4,10 @@ import json
 from typing import Any, Dict, List, Optional
 import structlog
 
-from mcp.server.models import Tool
 from mcp.types import (
+    Tool,
     TextContent,
-    ToolResult,
+    CallToolResult,
     EmbeddedResource,
 )
 
@@ -28,155 +28,141 @@ class StarfishTools:
         """Get list of available MCP tools."""
         return [
             Tool(
-                name="starfish_find_file",
-                description="Find files by name in Starfish. Simple search for files matching a filename pattern.",
+                name="starfish_query",
+                description="Comprehensive file and directory search in Starfish with all available filters. This is the main search tool.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "filename": {
+                        # Basic search parameters
+                        "name": {
                             "type": "string",
-                            "description": "Filename or pattern to search for (e.g., 'foo', '*.pdf', 'config.json')"
+                            "description": "Filename pattern (shell wildcards: *, ?). Examples: 'config.json', '*.pdf', 'test*'"
                         },
-                        "collection": {
+                        "name_regex": {
                             "type": "string", 
-                            "description": "Optional collection name to search within (e.g., 'Documents', 'TestData')"
+                            "description": "Filename regex pattern. Examples: '^.*\\.jpg$', '^config.*\\.json$'"
                         },
-                        "limit": {
+                        "path": {
+                            "type": "string",
+                            "description": "Parent path pattern (shell wildcards). Examples: '/home/*', 'Documents/Projects'"
+                        },
+                        "path_regex": {
+                            "type": "string",
+                            "description": "Parent path regex pattern. Examples: '^/home/.*', '^.*project.*$'"
+                        },
+                        
+                        # File attributes
+                        "file_type": {
+                            "type": "string",
+                            "enum": ["f", "d", "l", "b", "c", "s", "p"],
+                            "description": "File type: 'f'=file, 'd'=directory, 'l'=symlink, 'b'=block device, 'c'=char device, 's'=socket, 'p'=FIFO"
+                        },
+                        "ext": {
+                            "type": "string",
+                            "description": "File extension (without dot). Examples: 'pdf', 'jpg', 'txt'"
+                        },
+                        "empty": {
+                            "type": "boolean",
+                            "description": "Find empty files and directories (true) or exclude them (false)"
+                        },
+                        
+                        # Ownership and permissions
+                        "uid": {
                             "type": "integer",
-                            "description": "Maximum number of results to return (default: 100)",
-                            "default": 100
-                        }
-                    },
-                    "required": ["filename"]
-                }
-            ),
-            Tool(
-                name="starfish_find_by_tag",
-                description="Find files with specific tags in Starfish.",
-                inputSchema={
-                    "type": "object", 
-                    "properties": {
+                            "description": "User ID (UID) to filter by. Examples: 0 (root), 1001"
+                        },
+                        "gid": {
+                            "type": "integer",
+                            "description": "Group ID (GID) to filter by. Examples: 0 (root group), 100"
+                        },
+                        "username": {
+                            "type": "string",
+                            "description": "Username (exact match). Examples: 'root', 'john', 'admin'"
+                        },
+                        "username_regex": {
+                            "type": "string",
+                            "description": "Username regex pattern. Examples: '^admin.*', '^.*_user$'"
+                        },
+                        "groupname": {
+                            "type": "string", 
+                            "description": "Group name (exact match). Examples: 'wheel', 'users', 'admin'"
+                        },
+                        "groupname_regex": {
+                            "type": "string",
+                            "description": "Group name regex pattern. Examples: '^admin.*', '.*_group$'"
+                        },
+                        "inode": {
+                            "type": "integer",
+                            "description": "Specific inode number to find"
+                        },
+                        
+                        # Directory depth
+                        "depth": {
+                            "type": "integer",
+                            "description": "Exact directory depth from search root (0=root level, 1=immediate children)"
+                        },
+                        "maxdepth": {
+                            "type": "integer",
+                            "description": "Maximum directory depth to search (limits recursion)"
+                        },
+                        
+                        # Tags
                         "tag": {
                             "type": "string",
-                            "description": "Tag to search for (e.g., 'bar', 'project:alpha', 'status:active')"
+                            "description": "Tag search with AND/OR/NOT logic. Examples: 'important', 'tag1 tag2' (AND), multiple calls for OR"
                         },
-                        "collection": {
+                        "tag_explicit": {
                             "type": "string",
-                            "description": "Optional collection name to search within"
+                            "description": "Tags attached directly (not inherited). Supports AND/OR/NOT logic"
                         },
+                        
+                        # Search scope
+                        "volumes_and_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Limit search to specific volume:path combinations. Examples: ['home:', 'data:/projects']"
+                        },
+                        "zone": {
+                            "type": "string",
+                            "description": "Search within a specific zone name"
+                        },
+                        
+                        # Output control
                         "limit": {
                             "type": "integer",
-                            "description": "Maximum number of results to return (default: 100)", 
-                            "default": 100
-                        }
-                    },
-                    "required": ["tag"]
-                }
-            ),
-            Tool(
-                name="starfish_find_in_directory",
-                description="Find files in a specific directory path in Starfish.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "directory_path": {
-                            "type": "string",
-                            "description": "Directory path to search in (e.g., '/baz', '/data/projects')"
-                        },
-                        "collection": {
-                            "type": "string",
-                            "description": "Optional collection name to search within"
-                        },
-                        "recursive": {
-                            "type": "boolean",
-                            "description": "Whether to search recursively in subdirectories (default: true)",
-                            "default": True
-                        },
-                        "limit": {
-                            "type": "integer", 
-                            "description": "Maximum number of results to return (default: 100)",
-                            "default": 100
-                        }
-                    },
-                    "required": ["directory_path"]
-                }
-            ),
-            Tool(
-                name="starfish_query_advanced",
-                description="Execute advanced Starfish query with full control over query parameters.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Starfish query string (e.g., 'type=f size>1MB tag=important')"
-                        },
-                        "format_fields": {
-                            "type": "string",
-                            "description": "Space-separated list of fields to return (e.g., 'fn size mt volume tags_explicit')",
-                            "default": "parent_path fn type size ct mt at uid gid mode volume tags_explicit tags_inherited"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of results to return (default: 1000)",
-                            "default": 1000
+                            "default": 100,
+                            "description": "Maximum number of results to return"
                         },
                         "sort_by": {
                             "type": "string",
-                            "description": "Sort order (e.g., 'size', 'mt', 'parent_path,fn')"
+                            "description": "Sort by fields. Examples: 'size', '-mtime', '+parent_path,size'"
+                        },
+                        "format_fields": {
+                            "type": "string",
+                            "description": "Space-separated fields to include. Default includes all common fields"
+                        },
+                        
+                        # Performance
+                        "use_async": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Use async query API for better performance on large searches"
                         }
                     },
-                    "required": ["query"]
+                    "additionalProperties": False
                 }
             ),
+            
             Tool(
-                name="starfish_list_volumes",
-                description="List all available Starfish volumes and their mount information.",
+                name="starfish_list_volumes", 
+                description="List all available Starfish volumes with details.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
                     "additionalProperties": False
                 }
             ),
-            Tool(
-                name="starfish_list_collections", 
-                description="List all available Starfish collections (Collections: tagset).",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "force_refresh": {
-                            "type": "boolean",
-                            "description": "Force refresh of collections cache (default: false)",
-                            "default": False
-                        }
-                    },
-                    "additionalProperties": False
-                }
-            ),
-            Tool(
-                name="starfish_get_tagset",
-                description="Get all tags from a specific tagset.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "tagset_name": {
-                            "type": "string",
-                            "description": "Name of the tagset to query (e.g., 'Collections', 'Projects')"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of tags to return (default: 1000)",
-                            "default": 1000
-                        },
-                        "with_private": {
-                            "type": "boolean",
-                            "description": "Include private tags in results (default: true)",
-                            "default": True
-                        }
-                    },
-                    "required": ["tagset_name"]
-                }
-            ),
+            
             Tool(
                 name="starfish_list_zones",
                 description="List all available Starfish zones with detailed information.",
@@ -185,329 +171,309 @@ class StarfishTools:
                     "properties": {},
                     "additionalProperties": False
                 }
+            ),
+            
+            Tool(
+                name="starfish_get_tagset",
+                description="Get detailed information about a specific tagset.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tagset_name": {
+                            "type": "string",
+                            "description": "Name of the tagset to retrieve (use ':' for default tagset)"
+                        }
+                    },
+                    "required": ["tagset_name"]
+                }
             )
         ]
     
-    async def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> ToolResult:
+    async def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> CallToolResult:
         """Handle MCP tool calls."""
         try:
-            if name == "starfish_find_file":
-                return await self._find_file(arguments)
-            elif name == "starfish_find_by_tag":
-                return await self._find_by_tag(arguments)
-            elif name == "starfish_find_in_directory":
-                return await self._find_in_directory(arguments)
-            elif name == "starfish_query_advanced":
-                return await self._query_advanced(arguments)
+            if name == "starfish_query":
+                return await self._query(arguments)
             elif name == "starfish_list_volumes":
                 return await self._list_volumes(arguments)
-            elif name == "starfish_list_collections":
-                return await self._list_collections(arguments)
-            elif name == "starfish_get_tagset":
-                return await self._get_tagset(arguments)
             elif name == "starfish_list_zones":
                 return await self._list_zones(arguments)
+            elif name == "starfish_get_tagset":
+                return await self._get_tagset(arguments)
             else:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(
                         type="text",
                         text=f"Unknown tool: {name}"
                     )],
                     isError=True
                 )
-        
         except StarfishError as e:
-            logger.error(
-                "Starfish API error",
-                tool=name,
-                error_code=e.code,
-                error_message=e.message
-            )
-            return ToolResult(
+            logger.error("Starfish API error", tool=name, error=str(e))
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
-                    text=f"Starfish API Error ({e.code}): {e.message}"
+                    text=f"Starfish API error: {e}"
                 )],
                 isError=True
             )
-        
         except Exception as e:
-            logger.error(
-                "Tool execution error", 
-                tool=name,
-                error=str(e)
-            )
-            return ToolResult(
+            logger.error("Tool execution failed", tool=name, error=str(e))
+            return CallToolResult(
                 content=[TextContent(
                     type="text",
-                    text=f"Tool execution failed: {str(e)}"
+                    text=f"Tool execution failed: {e}"
                 )],
                 isError=True
             )
-    
-    async def _find_file(self, arguments: Dict[str, Any]) -> ToolResult:
-        """Find files by filename."""
-        filename = arguments["filename"]
-        collection = arguments.get("collection")
+
+    async def _query(self, arguments: Dict[str, Any]) -> CallToolResult:
+        """Comprehensive Starfish query with all available filters."""
+        # Extract parameters
+        name = arguments.get("name")
+        name_regex = arguments.get("name_regex")
+        path = arguments.get("path")
+        path_regex = arguments.get("path_regex")
+        file_type = arguments.get("file_type")
+        ext = arguments.get("ext")
+        empty = arguments.get("empty")
+        uid = arguments.get("uid")
+        gid = arguments.get("gid")
+        username = arguments.get("username")
+        username_regex = arguments.get("username_regex")
+        groupname = arguments.get("groupname")
+        groupname_regex = arguments.get("groupname_regex")
+        inode = arguments.get("inode")
+        depth = arguments.get("depth")
+        maxdepth = arguments.get("maxdepth")
+        tag = arguments.get("tag")
+        tag_explicit = arguments.get("tag_explicit")
+        volumes_and_paths = arguments.get("volumes_and_paths", [])
+        zone = arguments.get("zone")
         limit = arguments.get("limit", 100)
-        
-        # Build query
-        query_parts = ["type=f"]  # Only files
-        
-        # Add filename filter - use wildcard matching
-        if "*" in filename or "?" in filename:
-            # TODO: Starfish may not support glob patterns directly in filename search
-            # For now, we'll do a simple contains search and filter results
-            query_parts.append(f"fn~{filename.replace('*', '').replace('?', '')}")
-        else:
-            query_parts.append(f"fn~{filename}")
-        
-        # Add collection filter if specified
-        if collection:
-            query_parts.append(f"tag=Collections:{collection}")
-        
-        query = " ".join(query_parts)
-        
-        logger.info(
-            "Searching for files by name",
-            filename=filename,
-            collection=collection,
-            query=query
-        )
-        
-        response = await self.client.query(query, limit=limit)
-        
-        # Filter results for exact filename matches if needed
-        filtered_entries = []
-        for entry in response.entries:
-            if "*" in filename:
-                # Simple wildcard matching
-                pattern = filename.replace("*", ".*").replace("?", ".")
-                import re
-                if re.match(pattern, entry.filename, re.IGNORECASE):
-                    filtered_entries.append(entry)
-            elif filename.lower() in entry.filename.lower():
-                filtered_entries.append(entry)
-        
-        # Convert to JSON
-        results = []
-        for entry in filtered_entries[:limit]:
-            results.append({
-                "id": entry.id,
-                "filename": entry.filename,
-                "parent_path": entry.parent_path,
-                "full_path": entry.full_path,
-                "size": entry.size,
-                "volume": entry.volume,
-                "modify_time": entry.modify_time.isoformat() if entry.modify_time else None,
-                "tags_explicit": entry.tags_explicit,
-                "tags_inherited": entry.tags_inherited,
-                "is_file": entry.is_file
-            })
-        
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "query": query,
-                    "total_found": len(filtered_entries),
-                    "returned": len(results),
-                    "files": results
-                }, indent=2)
-            )]
-        )
-    
-    async def _find_by_tag(self, arguments: Dict[str, Any]) -> ToolResult:
-        """Find files by tag."""
-        tag = arguments["tag"]
-        collection = arguments.get("collection")
-        limit = arguments.get("limit", 100)
-        
-        # Build query
-        query_parts = ["type=f"]  # Only files
-        query_parts.append(f"tag={tag}")
-        
-        # Add collection filter if specified
-        if collection:
-            query_parts.append(f"tag=Collections:{collection}")
-        
-        query = " ".join(query_parts)
-        
-        logger.info(
-            "Searching for files by tag",
-            tag=tag,
-            collection=collection,
-            query=query
-        )
-        
-        response = await self.client.query(query, limit=limit)
-        
-        # Convert to JSON
-        results = []
-        for entry in response.entries:
-            results.append({
-                "id": entry.id,
-                "filename": entry.filename,
-                "parent_path": entry.parent_path,
-                "full_path": entry.full_path,
-                "size": entry.size,
-                "volume": entry.volume,
-                "modify_time": entry.modify_time.isoformat() if entry.modify_time else None,
-                "tags_explicit": entry.tags_explicit,
-                "tags_inherited": entry.tags_inherited,
-                "is_file": entry.is_file
-            })
-        
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "query": query,
-                    "total_found": response.total,
-                    "returned": len(results),
-                    "files": results
-                }, indent=2)
-            )]
-        )
-    
-    async def _find_in_directory(self, arguments: Dict[str, Any]) -> ToolResult:
-        """Find files in directory."""
-        directory_path = arguments["directory_path"].rstrip("/")
-        collection = arguments.get("collection")
-        recursive = arguments.get("recursive", True)
-        limit = arguments.get("limit", 100)
-        
-        # Build query
-        query_parts = ["type=f"]  # Only files
-        
-        if recursive:
-            # Search in directory and all subdirectories
-            query_parts.append(f"parent_path~{directory_path}")
-        else:
-            # Search only in exact directory
-            query_parts.append(f"parent_path={directory_path}")
-        
-        # Add collection filter if specified
-        if collection:
-            query_parts.append(f"tag=Collections:{collection}")
-        
-        query = " ".join(query_parts)
-        
-        logger.info(
-            "Searching for files in directory",
-            directory_path=directory_path,
-            collection=collection,
-            recursive=recursive,
-            query=query
-        )
-        
-        response = await self.client.query(query, limit=limit)
-        
-        # Convert to JSON
-        results = []
-        for entry in response.entries:
-            results.append({
-                "id": entry.id,
-                "filename": entry.filename,
-                "parent_path": entry.parent_path,
-                "full_path": entry.full_path,
-                "size": entry.size,
-                "volume": entry.volume,
-                "modify_time": entry.modify_time.isoformat() if entry.modify_time else None,
-                "tags_explicit": entry.tags_explicit,
-                "tags_inherited": entry.tags_inherited,
-                "is_file": entry.is_file
-            })
-        
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "query": query,
-                    "directory_path": directory_path,
-                    "recursive": recursive,
-                    "total_found": response.total,
-                    "returned": len(results),
-                    "files": results
-                }, indent=2)
-            )]
-        )
-    
-    async def _query_advanced(self, arguments: Dict[str, Any]) -> ToolResult:
-        """Execute advanced query."""
-        query = arguments["query"]
-        format_fields = arguments.get("format_fields")
-        limit = arguments.get("limit", 1000)
         sort_by = arguments.get("sort_by")
+        format_fields = arguments.get("format_fields")
+        use_async = arguments.get("use_async", False)
+        
+        # Build query parts
+        query_parts = []
+        
+        # File type
+        if file_type:
+            query_parts.append(f"type={file_type}")
+        
+        # Names and paths
+        if name:
+            # Check if it's a regex pattern (starts with ^ or contains regex chars)
+            if name.startswith('^') or any(c in name for c in ['(', ')', '[', ']', '{', '}', '|', '+', '?']):
+                if not name.startswith('^'):
+                    name = '^' + name
+                query_parts.append(f"name-re={name}")
+            elif '*' in name or '?' in name:
+                # Shell pattern
+                query_parts.append(f"name={name}")
+            else:
+                # Exact match for alphanumeric
+                query_parts.append(f"name={name}")
+        
+        if name_regex:
+            if not name_regex.startswith('^'):
+                name_regex = '^' + name_regex
+            query_parts.append(f"name-re={name_regex}")
+        
+        if path:
+            query_parts.append(f"ppath={path}")
+        
+        if path_regex:
+            if not path_regex.startswith('^'):
+                path_regex = '^' + path_regex
+            query_parts.append(f"ppath-re={path_regex}")
+        
+        # File attributes
+        if ext:
+            query_parts.append(f"ext={ext}")
+        
+        if empty is not None:
+            if empty:
+                query_parts.append("empty")
+        
+        if inode:
+            query_parts.append(f"inode={inode}")
+        
+        # Ownership
+        if uid is not None:
+            query_parts.append(f"uid={uid}")
+        
+        if gid is not None:
+            query_parts.append(f"gid={gid}")
+        
+        if username:
+            query_parts.append(f"username={username}")
+        
+        if username_regex:
+            if not username_regex.startswith('^'):
+                username_regex = '^' + username_regex
+            query_parts.append(f"username-re={username_regex}")
+        
+        if groupname:
+            query_parts.append(f"groupname={groupname}")
+        
+        if groupname_regex:
+            if not groupname_regex.startswith('^'):
+                groupname_regex = '^' + groupname_regex
+            query_parts.append(f"groupname-re={groupname_regex}")
+        
+        # Depth
+        if depth is not None:
+            query_parts.append(f"depth={depth}")
+        
+        if maxdepth is not None:
+            query_parts.append(f"maxdepth={maxdepth}")
+        
+        # Tags
+        if tag:
+            query_parts.append(f"tag={tag}")
+        
+        if tag_explicit:
+            query_parts.append(f"tag-explicit={tag_explicit}")
+        
+        # Zone
+        if zone:
+            query_parts.append(f"zone={zone}")
+        
+        query = " ".join(query_parts)
         
         logger.info(
-            "Executing advanced query",
+            "Executing comprehensive Starfish query",
             query=query,
-            format_fields=format_fields,
-            limit=limit,
-            sort_by=sort_by
+            volumes_and_paths=volumes_and_paths,
+            use_async=use_async,
+            limit=limit
         )
         
-        response = await self.client.query(
-            query=query,
-            format_fields=format_fields,
-            limit=limit,
-            sort_by=sort_by
-        )
+        # Execute query
+        if use_async and volumes_and_paths:
+            response = await self.client.async_query(
+                volumes_and_paths=volumes_and_paths,
+                queries=[query] if query else [],
+                format_fields=format_fields,
+                limit=limit,
+                sort_by=sort_by
+            )
+        else:
+            volumes_param = volumes_and_paths[0] if volumes_and_paths else None
+            response = await self.client.query(
+                query=query,
+                volumes_and_paths=volumes_param,
+                format_fields=format_fields,
+                limit=limit,
+                sort_by=sort_by
+            )
         
-        # Convert to JSON
+        # Convert to JSON result
         results = []
-        for entry in response.entries:
-            results.append({
+        for entry in response:
+            result = {
                 "id": entry.id,
                 "filename": entry.filename,
                 "parent_path": entry.parent_path,
                 "full_path": entry.full_path,
-                "type": entry.type,
-                "size": entry.size,
                 "volume": entry.volume,
-                "create_time": entry.create_time.isoformat() if entry.create_time else None,
-                "modify_time": entry.modify_time.isoformat() if entry.modify_time else None,
-                "access_time": entry.access_time.isoformat() if entry.access_time else None,
+                "size": entry.size,
+                "type": "file" if entry.is_file else "directory",
                 "uid": entry.uid,
                 "gid": entry.gid,
-                "mode": entry.mode,
-                "tags_explicit": entry.tags_explicit,
-                "tags_inherited": entry.tags_inherited,
-                "is_file": entry.is_file
-            })
+                "mode": entry.mode
+            }
+            
+            # Add time information if available
+            if entry.create_time:
+                result["create_time"] = entry.create_time.isoformat()
+            if entry.modify_time:
+                result["modify_time"] = entry.modify_time.isoformat()
+            if entry.access_time:
+                result["access_time"] = entry.access_time.isoformat()
+            
+            # Add tags if available
+            if entry.all_tags:
+                result["tags"] = entry.all_tags
+            
+            # Add zones if available
+            if entry.zones:
+                result["zones"] = [{"id": z.id, "name": z.name, "relative_path": z.relative_path} for z in entry.zones]
+            
+            results.append(result)
         
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(
                 type="text",
                 text=json.dumps({
                     "query": query,
-                    "total_found": response.total,
-                    "returned": len(results),
-                    "entries": results
+                    "filters_applied": {
+                        "name": name,
+                        "name_regex": name_regex,
+                        "path": path,
+                        "path_regex": path_regex,
+                        "file_type": file_type,
+                        "ext": ext,
+                        "empty": empty,
+                        "uid": uid,
+                        "gid": gid,
+                        "username": username,
+                        "username_regex": username_regex,
+                        "groupname": groupname,
+                        "groupname_regex": groupname_regex,
+                        "inode": inode,
+                        "depth": depth,
+                        "maxdepth": maxdepth,
+                        "tag": tag,
+                        "tag_explicit": tag_explicit,
+                        "zone": zone
+                    },
+                    "search_scope": volumes_and_paths,
+                    "use_async": use_async,
+                    "total_found": len(results),
+                    "limit": limit,
+                    "results": results
                 }, indent=2)
             )]
         )
-    
-    async def _list_volumes(self, arguments: Dict[str, Any]) -> ToolResult:
-        """List volumes."""
-        logger.info("Listing volumes")
+
+    async def _list_volumes(self, arguments: Dict[str, Any]) -> CallToolResult:
+        """List available Starfish volumes."""
+        logger.info("Listing Starfish volumes")
         
         volumes = await self.client.list_volumes()
         
         # Convert to JSON
         results = []
         for volume in volumes:
-            results.append({
+            volume_data = {
                 "id": volume.id,
-                "volume_name": volume.vol,
+                "name": volume.vol,
                 "display_name": volume.display_name,
+                "root": volume.root,
                 "type": volume.type,
+                "default_agent_address": volume.default_agent_address,
+                "total_capacity": volume.total_capacity,
+                "free_space": volume.free_space,
                 "mounts": volume.mounts,
                 "mount_opts": volume.mount_opts
-            })
+            }
+            
+            # Add volume size info if available
+            if volume.volume_size_info:
+                volume_data["size_info"] = {
+                    "number_of_files": volume.number_of_files,
+                    "number_of_dirs": volume.number_of_dirs,
+                    "sum_of_logical_sizes": volume.sum_of_logical_sizes,
+                    "sum_of_physical_sizes": volume.sum_of_physical_sizes,
+                    "sum_of_blocks": volume.sum_of_blocks
+                }
+            
+            results.append(volume_data)
         
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(
                 type="text",
                 text=json.dumps({
@@ -516,61 +482,10 @@ class StarfishTools:
                 }, indent=2)
             )]
         )
-    
-    async def _list_collections(self, arguments: Dict[str, Any]) -> ToolResult:
-        """List collections."""
-        force_refresh = arguments.get("force_refresh", False)
-        
-        logger.info("Listing collections", force_refresh=force_refresh)
-        
-        collections = await self.client.list_collections(force_refresh=force_refresh)
-        
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "total_collections": len(collections),
-                    "collections": collections
-                }, indent=2)
-            )]
-        )
-    
-    async def _get_tagset(self, arguments: Dict[str, Any]) -> ToolResult:
-        """Get tagset."""
-        tagset_name = arguments["tagset_name"]
-        limit = arguments.get("limit", 1000)
-        with_private = arguments.get("with_private", True)
-        
-        logger.info(
-            "Getting tagset",
-            tagset_name=tagset_name,
-            limit=limit,
-            with_private=with_private
-        )
-        
-        tagset_response = await self.client.get_tagset(
-            tagset_name=tagset_name,
-            limit=limit,
-            with_private=with_private
-        )
-        
-        # Extract tag names
-        tag_names = [tag.name for tag in tagset_response.tag_names]
-        
-        return ToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "tagset_name": tagset_name,
-                    "total_tags": len(tag_names),
-                    "tags": tag_names
-                }, indent=2)
-            )]
-        )
-    
-    async def _list_zones(self, arguments: Dict[str, Any]) -> ToolResult:
-        """List zones."""
-        logger.info("Listing zones")
+
+    async def _list_zones(self, arguments: Dict[str, Any]) -> CallToolResult:
+        """List available Starfish zones."""
+        logger.info("Listing Starfish zones")
         
         zones = await self.client.list_zones()
         
@@ -580,30 +495,12 @@ class StarfishTools:
             zone_data = {
                 "id": zone.id,
                 "name": zone.name,
-                "managers": [
-                    {
-                        "system_id": manager.system_id,
-                        "username": manager.username
-                    }
-                    for manager in zone.managers
-                ],
-                "managing_groups": [
-                    {
-                        "system_id": group.system_id,
-                        "groupname": group.groupname
-                    }
-                    for group in zone.managing_groups
-                ],
+                "paths": zone.paths,
+                "managers": [{"system_id": m.system_id, "username": m.username} for m in zone.managers],
+                "managing_groups": [{"system_id": g.system_id, "groupname": g.groupname} for g in zone.managing_groups],
                 "restore_managers": zone.restore_managers,
                 "restore_managing_groups": zone.restore_managing_groups,
-                "paths": zone.paths,
-                "tagsets": [
-                    {
-                        "name": tagset.name,
-                        "tag_names": tagset.tag_names
-                    }
-                    for tagset in zone.tagsets
-                ],
+                "tagsets": [{"name": t.name, "tag_names": t.tag_names} for t in zone.tagsets],
                 "user_params": zone.user_params,
                 "aggregates": {
                     "size": zone.aggregates.size if zone.aggregates else None,
@@ -614,12 +511,51 @@ class StarfishTools:
             }
             results.append(zone_data)
         
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(
                 type="text",
                 text=json.dumps({
                     "total_zones": len(results),
                     "zones": results
                 }, indent=2)
+            )]
+        )
+
+    async def _get_tagset(self, arguments: Dict[str, Any]) -> CallToolResult:
+        """Get detailed information about a specific tagset."""
+        tagset_name = arguments["tagset_name"]
+        
+        logger.info("Getting tagset details", tagset_name=tagset_name)
+        
+        tagset = await self.client.get_tagset(tagset_name)
+        
+        # Convert to JSON
+        result = {
+            "name": tagset.name,
+            "zone_ids": tagset.zone_ids,
+            "inheritable": tagset.inheritable,
+            "pinnable": tagset.pinnable,
+            "action": tagset.action.value if tagset.action else None,
+            "tags": [{"id": tag.id, "name": tag.name} for tag in tagset.tags],
+            "zones": []
+        }
+        
+        # Add zone details
+        for zone in tagset.zones:
+            zone_data = {
+                "id": zone.id,
+                "name": zone.name,
+                "paths": zone.paths,
+                "managers": [{"system_id": m.system_id, "username": m.username} for m in zone.managers],
+                "managing_groups": [{"system_id": g.system_id, "groupname": g.groupname} for g in zone.managing_groups],
+                "tagsets": [{"name": t.name, "tag_names": t.tag_names} for t in zone.tagsets],
+                "user_params": zone.user_params
+            }
+            result["zones"].append(zone_data)
+        
+        return CallToolResult(
+            content=[TextContent(
+                type="text",
+                text=json.dumps(result, indent=2)
             )]
         )

@@ -11,7 +11,7 @@ from mcp.types import (
     Resource,
     Tool,
     TextContent,
-    ToolResult,
+    CallCallToolResult,
     EmbeddedResource,
 )
 
@@ -72,10 +72,10 @@ class StarfishMCPServer:
             return self.tools.get_tools()
         
         @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> ToolResult:
+        async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> CallToolResult:
             """Handle tool calls."""
             if self.tools is None:
-                return ToolResult(
+                return CallToolResult(
                     content=[TextContent(
                         type="text",
                         text="Starfish client not initialized"
