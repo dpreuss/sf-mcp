@@ -7,6 +7,7 @@ from mcp.types import Tool, TextContent
 
 from ..client import StarfishClient
 from ..models import StarfishError
+from ..rate_limiter import RateLimiter
 from .schema import get_starfish_query_schema
 from .starfish_query import execute_starfish_query
 from .management import list_volumes, list_zones, get_tagset, list_tags, list_tagsets, get_zone, get_volume
@@ -17,13 +18,27 @@ logger = structlog.get_logger(__name__)
 class StarfishTools:
     """MCP tools for Starfish API operations."""
     
-    def __init__(self, client: StarfishClient):
+    def __init__(self, client: StarfishClient, config=None):
         self.client = client
-        self._query_count = 0  # Track queries to enforce guardrails
         
-    def reset_query_count(self):
-        """Reset query count for new session/conversation."""
-        self._query_count = 0
+        # Initialize rate limiter with config or defaults
+        if config:
+            self.rate_limiter = RateLimiter(
+                max_queries=config.rate_limit_max_queries,
+                time_window_seconds=config.rate_limit_time_window_seconds,
+                enabled=config.rate_limit_enabled
+            )
+        else:
+            # Fallback defaults for backwards compatibility
+            self.rate_limiter = RateLimiter(max_queries=5, time_window_seconds=10, enabled=True)
+    
+    def reset_rate_limit(self):
+        """Reset the rate limiter, clearing all recorded queries."""
+        self.rate_limiter.reset()
+    
+    def get_rate_limit_status(self):
+        """Get current rate limiter status."""
+        return self.rate_limiter.get_status()
     
     def get_tools(self) -> List[Tool]:
         """Get list of available MCP tools."""
@@ -33,7 +48,7 @@ class StarfishTools:
                 description="""Comprehensive file and directory search in Starfish with all available filters. Returns detailed metadata including timestamps, permissions, ownership, zones, and tags. Use 'format_fields' parameter to control output detail level. This is the main search tool.
 
 🚨 CRITICAL GUARDRAILS:
-- NEVER run more than 5 sequential queries to solve one problem - if you need more, you're solving it wrong
+- Rate limited to 5 queries per 10 seconds (configurable) - use broad queries instead of many narrow ones
 - Each query has a 20-second timeout - plan accordingly  
 - Use broad queries instead of iterating through volumes/directories individually
 
@@ -143,8 +158,17 @@ ANTI-PATTERNS TO AVOID:
                 }
             ),
             Tool(
-                name="starfish_reset_query_count",
-                description="Reset the query count guardrail. Use this when starting a new task if you've hit the 5-query limit.",
+                name="starfish_reset_rate_limit",
+                description="Reset the rate limiter, clearing query history. Use this when starting a new task if you've hit the rate limit.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False
+                }
+            ),
+            Tool(
+                name="starfish_get_rate_limit_status",
+                description="Get current rate limit status including queries remaining and time to reset.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -157,22 +181,14 @@ ANTI-PATTERNS TO AVOID:
         """Handle MCP tool calls."""
         try:
             if name == "starfish_query":
-                # Enforce query limit guardrail
-                self._query_count += 1
-                if self._query_count > 5:
-                    logger.warning(
-                        "Query limit exceeded", 
-                        query_count=self._query_count,
-                        limit=5
-                    )
+                # Check rate limit
+                allowed, error_message = self.rate_limiter.check_rate_limit()
+                if not allowed:
                     return {
                         "content": [
                             {
                                 "type": "text",
-                                "text": f"🚨 GUARDRAIL VIOLATION: Query limit exceeded ({self._query_count}/5 queries). "
-                                       f"You're probably solving this problem incorrectly. "
-                                       f"Use broader queries instead of multiple narrow ones. "
-                                       f"Call reset_query_count() if you're starting a new task."
+                                "text": error_message
                             }
                         ]
                     }
@@ -192,13 +208,35 @@ ANTI-PATTERNS TO AVOID:
                 return await list_tagsets(self.client, arguments)
             elif name == "starfish_list_tags":
                 return await list_tags(self.client, arguments)
-            elif name == "starfish_reset_query_count":
-                self.reset_query_count()
+            elif name == "starfish_reset_rate_limit":
+                self.reset_rate_limit()
+                status = self.get_rate_limit_status()
                 return {
                     "content": [
                         {
                             "type": "text",
-                            "text": "Query count reset to 0. You can now run up to 5 more queries."
+                            "text": f"Rate limit reset. You can now run up to {status['max_queries']} queries in {status['time_window_seconds']} seconds."
+                        }
+                    ]
+                }
+            elif name == "starfish_get_rate_limit_status":
+                status = self.get_rate_limit_status()
+                if status['enabled']:
+                    message = (
+                        f"Rate Limit Status:\n"
+                        f"• Current queries: {status['current_queries']}/{status['max_queries']}\n"
+                        f"• Time window: {status['time_window_seconds']} seconds\n"
+                        f"• Queries remaining: {status['queries_remaining']}\n"
+                        f"• Time to reset: {status['time_to_reset']:.1f} seconds"
+                    )
+                else:
+                    message = "Rate limiting is disabled."
+                
+                return {
+                    "content": [
+                        {
+                            "type": "text", 
+                            "text": message
                         }
                     ]
                 }

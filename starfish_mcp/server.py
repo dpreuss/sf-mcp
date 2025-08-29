@@ -121,8 +121,8 @@ class StarfishMCPServer:
                     total_collections=len(collections)
                 )
             
-            # Initialize tools
-            self.tools = StarfishTools(self.client)
+            # Initialize tools with config for rate limiting
+            self.tools = StarfishTools(self.client, self.config)
             
             logger.info("Starfish MCP server initialized successfully")
             

@@ -41,6 +41,11 @@ class StarfishConfig(BaseModel):
     # Logging
     log_level: str = Field("INFO", description="Log level")
     
+    # Rate Limiting Configuration
+    rate_limit_max_queries: int = Field(5, description="Maximum queries allowed per time window")
+    rate_limit_time_window_seconds: int = Field(10, description="Time window for rate limiting in seconds")
+    rate_limit_enabled: bool = Field(True, description="Enable rate limiting")
+    
     @field_validator("api_endpoint")
     @classmethod
     def validate_api_endpoint(cls, v: str) -> str:
@@ -128,6 +133,9 @@ def load_config(env_file: Optional[str] = None) -> StarfishConfig:
         "tls_cert_file": os.getenv("TLS_CERT_FILE"),
         "tls_key_file": os.getenv("TLS_KEY_FILE"),
         "log_level": os.getenv("LOG_LEVEL", "INFO"),
+        "rate_limit_max_queries": int(os.getenv("RATE_LIMIT_MAX_QUERIES", "5")),
+        "rate_limit_time_window_seconds": int(os.getenv("RATE_LIMIT_TIME_WINDOW_SECONDS", "10")),
+        "rate_limit_enabled": os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true",
     }
     
     return StarfishConfig(**config_data)

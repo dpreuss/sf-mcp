@@ -15,7 +15,7 @@ def test_tools_creation(mock_starfish_client):
     tools = StarfishTools(mock_starfish_client)
     tool_list = tools.get_tools()
     
-    assert len(tool_list) == 9
+    assert len(tool_list) == 10
     
     # Check that expected tools are present
     tool_names = [tool.name for tool in tool_list]
@@ -28,7 +28,8 @@ def test_tools_creation(mock_starfish_client):
         "starfish_get_tagset",
         "starfish_list_tagsets",
         "starfish_list_tags",
-        "starfish_reset_query_count"
+        "starfish_reset_rate_limit",
+        "starfish_get_rate_limit_status"
     ]
     
     for expected_tool in expected_tools:
@@ -463,55 +464,59 @@ async def test_generic_error_handling(mock_starfish_client):
 # NEW GUARDRAIL TESTS
 
 @pytest.mark.asyncio
-async def test_query_count_guardrail_enforcement(mock_starfish_client):
-    """Test that the 5-query limit is enforced."""
+async def test_rate_limit_enforcement(mock_starfish_client):
+    """Test that rate limiting is enforced."""
+    # Create tools with fast rate limit for testing (2 queries per 1 second)
+    from starfish_mcp.rate_limiter import RateLimiter
     tools = StarfishTools(mock_starfish_client)
+    tools.rate_limiter = RateLimiter(max_queries=2, time_window_seconds=1, enabled=True)
     
-    # Reset to ensure clean state
-    tools.reset_query_count()
-    
-    # Run 5 queries successfully  
-    for i in range(5):
+    # First 2 queries should succeed
+    for i in range(2):
         result = await tools.handle_tool_call("starfish_query", {
             "limit": 1,
             "format_fields": "fn"
         })
         content = result["content"][0]["text"]
-        assert "GUARDRAIL VIOLATION" not in content
-        assert tools._query_count == i + 1
+        assert "RATE LIMIT EXCEEDED" not in content
     
-    # 6th query should be blocked
+    # 3rd query should be blocked
     result = await tools.handle_tool_call("starfish_query", {
         "limit": 1,
         "format_fields": "fn"
     })
     content = result["content"][0]["text"]
-    assert "🚨 GUARDRAIL VIOLATION" in content
-    assert "Query limit exceeded (6/5 queries)" in content
-    assert tools._query_count == 6
+    assert "🚨 RATE LIMIT EXCEEDED" in content
+    assert "2/2 queries in 1 seconds" in content
 
 
 @pytest.mark.asyncio
-async def test_query_count_reset_functionality(mock_starfish_client):
-    """Test the query count reset functionality."""
+async def test_rate_limit_reset_functionality(mock_starfish_client):
+    """Test the rate limit reset functionality."""
+    # Create tools with fast rate limit for testing
+    from starfish_mcp.rate_limiter import RateLimiter
     tools = StarfishTools(mock_starfish_client)
+    tools.rate_limiter = RateLimiter(max_queries=2, time_window_seconds=10, enabled=True)
     
     # Run queries to hit the limit
-    for i in range(5):
+    for i in range(2):
         await tools.handle_tool_call("starfish_query", {"limit": 1})
     
-    assert tools._query_count == 5
+    status = tools.get_rate_limit_status()
+    assert status["current_queries"] == 2
     
-    # Reset the counter
-    result = await tools.handle_tool_call("starfish_reset_query_count", {})
+    # Reset the rate limiter
+    result = await tools.handle_tool_call("starfish_reset_rate_limit", {})
     content = result["content"][0]["text"]
-    assert "Query count reset to 0" in content
-    assert tools._query_count == 0
+    assert "Rate limit reset" in content
+    
+    status_after = tools.get_rate_limit_status()
+    assert status_after["current_queries"] == 0
     
     # Should be able to query again
     result = await tools.handle_tool_call("starfish_query", {"limit": 1})
     content = result["content"][0]["text"]
-    assert "GUARDRAIL VIOLATION" not in content
+    assert "RATE LIMIT EXCEEDED" not in content
 
 
 def test_guardrail_warnings_in_tool_description(mock_starfish_client):
@@ -525,7 +530,7 @@ def test_guardrail_warnings_in_tool_description(mock_starfish_client):
     # Check for guardrail warnings in description
     description = query_tool.description
     assert "🚨 CRITICAL GUARDRAILS" in description
-    assert "NEVER run more than 5 sequential queries" in description
+    assert "Rate limited to 5 queries per 10 seconds" in description
     assert "20-second timeout" in description
     assert "ANTI-PATTERNS TO AVOID" in description
 
@@ -568,3 +573,46 @@ async def test_new_management_tools(mock_starfish_client):
     data = json.loads(content)
     assert "total_tagsets" in data
     assert "tagsets" in data
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_status_tool(mock_starfish_client):
+    """Test the rate limit status tool."""
+    from starfish_mcp.rate_limiter import RateLimiter
+    tools = StarfishTools(mock_starfish_client)
+    tools.rate_limiter = RateLimiter(max_queries=5, time_window_seconds=10, enabled=True)
+    
+    # Check initial status
+    result = await tools.handle_tool_call("starfish_get_rate_limit_status", {})
+    content = result["content"][0]["text"]
+    assert "Rate Limit Status:" in content
+    assert "Current queries: 0/5" in content
+    assert "Time window: 10 seconds" in content
+    assert "Queries remaining: 5" in content
+    
+    # Run a query and check status again
+    await tools.handle_tool_call("starfish_query", {"limit": 1})
+    
+    result = await tools.handle_tool_call("starfish_get_rate_limit_status", {})
+    content = result["content"][0]["text"]
+    assert "Current queries: 1/5" in content
+    assert "Queries remaining: 4" in content
+
+
+@pytest.mark.asyncio 
+async def test_rate_limit_disabled(mock_starfish_client):
+    """Test behavior when rate limiting is disabled."""
+    from starfish_mcp.rate_limiter import RateLimiter
+    tools = StarfishTools(mock_starfish_client)
+    tools.rate_limiter = RateLimiter(max_queries=1, time_window_seconds=1, enabled=False)
+    
+    # Should be able to run many queries when disabled
+    for i in range(5):
+        result = await tools.handle_tool_call("starfish_query", {"limit": 1})
+        content = result["content"][0]["text"]
+        assert "RATE LIMIT EXCEEDED" not in content
+    
+    # Status should show disabled
+    result = await tools.handle_tool_call("starfish_get_rate_limit_status", {})
+    content = result["content"][0]["text"]
+    assert "Rate limiting is disabled" in content

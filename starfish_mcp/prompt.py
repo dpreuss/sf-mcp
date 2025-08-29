@@ -19,11 +19,12 @@ STARFISH_QUERY_OPTIMIZATION_GUIDE = """
 3. **Efficient field selection**: Only request fields you need in `format_fields` to reduce 
    response size and improve performance.
 
-4. **CRITICAL - Query Limit Guardrails**: 
-   - **Never run more sequential queries than the number of volumes in the system** (typically 3-5)
-   - If you need more queries than that, you're probably solving the problem incorrectly
+4. **CRITICAL - Rate Limiting Guardrails**: 
+   - **Rate limited to 5 queries per 10 seconds by default** (configurable)
+   - Uses sliding window - old queries expire automatically 
    - Each query has a 20-second timeout - plan accordingly
-   - Use `list_volumes` to determine the reasonable query limit for the system
+   - Use `starfish_get_rate_limit_status` to check remaining queries
+   - Use `starfish_reset_rate_limit` if needed for new tasks
    - Prefer broad queries over many narrow ones
 
 5. **Timeout Awareness**: All API calls timeout after 20 seconds. If queries are timing out:
@@ -117,10 +118,11 @@ STARFISH_QUERY_OPTIMIZATION_GUIDE = """
 
 ## 🚨 CRITICAL GUARDRAILS - NEVER VIOLATE THESE
 
-6. **🚨 NEVER run more than 5 sequential queries** - If you need more, you're solving it wrong
+6. **🚨 RATE LIMIT: 5 queries per 10 seconds** - Use sliding window, old queries expire automatically
 7. **🚨 NEVER query each volume individually** - Use broad queries instead
 8. **🚨 NEVER iterate through directories** - Use filters and patterns instead
 9. **🚨 TIMEOUT AWARENESS** - All queries timeout after 20 seconds
+10. **🚨 CHECK RATE LIMIT STATUS** - Use `starfish_get_rate_limit_status` to see remaining queries
 
 ### Query Limit Examples
 
@@ -219,6 +221,18 @@ Use tagset names from starfish_list_tagsets.
     "starfish_list_tags": """
 Legacy tool - use starfish_list_tagsets instead for better information.
 Only returns tagset names without counts or structure details.
+""",
+
+    "starfish_get_rate_limit_status": """
+Use this to check current rate limiting status.
+Shows current queries, remaining queries, time window, and time to reset.
+Useful for understanding why queries might be blocked.
+""",
+
+    "starfish_reset_rate_limit": """
+Use this to reset the rate limiter when starting a completely new task.
+Clears the query history and allows full query quota again.
+Only use when switching to a different problem/analysis.
 """
 }
 
