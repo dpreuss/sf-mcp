@@ -179,3 +179,61 @@ async def test_client_timeout_custom_value(mock_config):
             
             assert exc_info.value.code == "REQUEST_TIMEOUT"
             assert "timed out after 5 seconds" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_timeout_implementation_correctness(mock_config):
+    """Test that the timeout implementation doesn't break normal requests."""
+    import aiohttp
+    from unittest.mock import AsyncMock
+    
+    client = StarfishClient(mock_config)
+    
+    # Mock successful response
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.content_type = "application/json"
+    mock_response.json = AsyncMock(return_value={"test": "data"})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+    
+    with patch('aiohttp.ClientSession.request') as mock_request:
+        mock_request.return_value = mock_response
+        
+        with patch.object(client, 'token_manager') as mock_token_manager:
+            mock_token_manager.get_token = AsyncMock(return_value="test-token")
+            
+            # This should work without any timeout issues
+            result = await client._request("GET", "/test")
+            
+            assert result == {"test": "data"}
+            assert mock_request.called
+
+
+@pytest.mark.asyncio
+async def test_timeout_with_slow_response(mock_config):
+    """Test timeout with actual slow response simulation."""
+    import asyncio
+    
+    client = StarfishClient(mock_config)
+    
+    async def slow_request(*args, **kwargs):
+        await asyncio.sleep(2)  # Simulate slow response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.content_type = "application/json"
+        mock_response.json = AsyncMock(return_value={"test": "data"})
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+        return mock_response
+    
+    with patch('aiohttp.ClientSession.request', side_effect=slow_request):
+        with patch.object(client, 'token_manager') as mock_token_manager:
+            mock_token_manager.get_token = AsyncMock(return_value="test-token")
+            
+            # Should timeout after 1 second
+            with pytest.raises(StarfishError) as exc_info:
+                await client._request("GET", "/test", timeout_seconds=1)
+            
+            assert exc_info.value.code == "REQUEST_TIMEOUT"
+            assert "timed out after 1 seconds" in exc_info.value.message

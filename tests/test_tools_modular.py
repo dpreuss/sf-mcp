@@ -530,6 +530,9 @@ def test_guardrail_warnings_in_tool_description(mock_starfish_client):
     # Check for guardrail warnings in description
     description = query_tool.description
     assert "🚨 CRITICAL GUARDRAILS" in description
+    assert "🚨 1000-ROW WARNING" in description
+    assert "your approach is WRONG" in description
+    assert "hit the limit and got incomplete data" in description
     assert "Rate limited to 5 queries per 10 seconds" in description
     assert "20-second timeout" in description
     assert "ANTI-PATTERNS TO AVOID" in description

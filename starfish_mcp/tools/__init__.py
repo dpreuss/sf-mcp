@@ -52,6 +52,13 @@ class StarfishTools:
 - Each query has a 20-second timeout - plan accordingly  
 - Use broad queries instead of iterating through volumes/directories individually
 
+🚨 1000-ROW WARNING - INDICATES INCORRECT APPROACH:
+If you get exactly 1000 rows back, your approach is WRONG! This means you hit the limit and got incomplete data.
+- For directory sizes: Use file_type="d" with rec_aggrs field, not individual file enumeration
+- For file counts: Use limit=0 and read total_found, don't count returned rows
+- For large datasets: Add specific filters (size, mtime, zones, tags) to narrow scope
+- NEVER trust 1000-row results for aggregation or directory analysis
+
 OPTIMIZATION TIPS:
 - Use 'total_found' from response for counts - set limit=0 when you only need counts, don't count results manually
 - For directory analysis: use file_type='d', depth=1, format_fields='fn rec_aggrs', sort_by='-rec_aggrs.size'

@@ -123,6 +123,12 @@ STARFISH_QUERY_OPTIMIZATION_GUIDE = """
 8. **🚨 NEVER iterate through directories** - Use filters and patterns instead
 9. **🚨 TIMEOUT AWARENESS** - All queries timeout after 20 seconds
 10. **🚨 CHECK RATE LIMIT STATUS** - Use `starfish_get_rate_limit_status` to see remaining queries
+11. **🚨 1000-ROW WARNING** - If you get exactly 1000 rows back, your approach is WRONG!
+    - 1000 is the default limit - you hit the cap and got incomplete data
+    - For directory analysis: Use rec_aggrs with file_type="d" and proper depth
+    - For counting: Use limit=0 and read total_found from response
+    - For large datasets: Add more specific filters (size, mtime, etc.)
+    - NEVER trust 1000-row results for aggregation or analysis
 
 ### Query Limit Examples
 

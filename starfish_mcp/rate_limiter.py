@@ -49,8 +49,12 @@ class RateLimiter:
         
         # Check if we're at the limit
         if len(self._query_timestamps) >= self.max_queries:
-            oldest_query_time = self._query_timestamps[0]
-            wait_time = self.time_window_seconds - (now - oldest_query_time)
+            # Handle edge case where max_queries is 0
+            if self.max_queries == 0:
+                wait_time = self.time_window_seconds
+            else:
+                oldest_query_time = self._query_timestamps[0]
+                wait_time = self.time_window_seconds - (now - oldest_query_time)
             
             logger.warning(
                 "Rate limit exceeded",

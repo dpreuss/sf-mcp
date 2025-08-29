@@ -1,6 +1,6 @@
-# Starfish MCP Server for Cursor IDE
+# Starfish MCP Server
 
-An MCP (Model Context Protocol) server for Starfish Storage integration. This server provides tools for querying files, managing volumes, zones, and tagsets through the Starfish API with built-in performance guardrails.
+A production-ready MCP (Model Context Protocol) server for Starfish Storage integration. Compatible with Claude Desktop, Cursor IDE, Gemini CLI, and other MCP clients. Provides comprehensive file search, storage management, and data analysis tools with intelligent performance guardrails.
 
 ## Features
 
@@ -8,7 +8,7 @@ An MCP (Model Context Protocol) server for Starfish Storage integration. This se
 - **📁 Volume & Zone Management**: List and inspect Starfish volumes and zones with detailed metadata
 - **🏷️ Tagset Support**: Full tagset management with tag counts and zone associations
 - **⚡ Optimized Queries**: Built-in query optimization with recursive aggregates for directory analysis
-- **🚨 Performance Guardrails**: 20-second timeouts and 5-query limits to prevent inefficient usage
+- **🚨 Smart Rate Limiting**: Configurable sliding window rate limiting (5 queries/10s default) with automatic expiry
 - **🔐 Authentication**: Username/password authentication with automatic token refresh
 - **📊 Rich Metadata**: Returns detailed file metadata including zones, tags, ownership, permissions
 - **🛡️ Error Handling**: Comprehensive error handling and logging
@@ -50,7 +50,11 @@ CACHE_TTL_HOURS=1
 LOG_LEVEL=INFO
 ```
 
-## MCP Configuration for Cursor
+## MCP Client Configuration
+
+This server is compatible with multiple MCP clients. Choose your client below:
+
+### Cursor IDE
 
 Add this MCP server to your Cursor settings:
 
@@ -64,7 +68,7 @@ Add this MCP server to your Cursor settings:
     "starfish": {
       "command": "python",
       "args": ["-m", "starfish_mcp.server"],
-      "cwd": "/Users/Don/src/sf-mcp",
+      "cwd": "/path/to/sf-mcp",
       "env": {
         "STARFISH_API_ENDPOINT": "https://sf-redashdev.sfish.dev/api",
         "STARFISH_USERNAME": "demo", 
@@ -75,6 +79,54 @@ Add this MCP server to your Cursor settings:
 }
 ```
 
+### Claude Desktop
+
+Add to your Claude Desktop MCP configuration file:
+
+**Location:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+
+```json
+{
+  "mcpServers": {
+    "starfish": {
+      "command": "/path/to/sf-mcp/venv/bin/python",
+      "args": ["-m", "starfish_mcp.server"],
+      "cwd": "/path/to/sf-mcp",
+      "env": {
+        "STARFISH_API_ENDPOINT": "https://sf-redashdev.sfish.dev/api",
+        "STARFISH_USERNAME": "demo",
+        "STARFISH_PASSWORD": "demo",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add to your Gemini CLI configuration:
+
+```json
+{
+  "mcpServers": {
+    "starfish": {
+      "command": "/path/to/sf-mcp/venv/bin/python",
+      "args": ["-m", "starfish_mcp.server"],
+      "cwd": "/path/to/sf-mcp",
+      "env": {
+        "STARFISH_API_ENDPOINT": "https://sf-redashdev.sfish.dev/api",
+        "STARFISH_USERNAME": "demo",
+        "STARFISH_PASSWORD": "demo",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+**Note:** Replace `/path/to/sf-mcp` with your actual installation path.
+
 ## Available Tools
 
 ### 🔍 Core Search Tool
@@ -83,7 +135,8 @@ Add this MCP server to your Cursor settings:
 The main tool with 19 filter parameters and built-in guardrails.
 
 **Key Features:**
-- 🚨 **Guardrails**: 20-second timeout, 5-query limit per session
+- 🚨 **Smart Rate Limiting**: Sliding window (5 queries/10s), auto-expiry, configurable
+- ⏱️ **Timeout Protection**: 20-second timeout per query with proper error handling  
 - ⚡ **Optimized**: Use `rec_aggrs` for directory analysis, `total_found` for counts
 - 🎯 **Efficient**: Broad queries preferred over multiple narrow ones
 
@@ -146,15 +199,65 @@ Legacy tool - use `starfish_list_tagsets` for better information.
 
 ### 🛠️ Utility Tools
 
-#### `starfish_reset_query_count` - Reset Guardrails
-Reset the 5-query limit when starting a new task.
+#### `starfish_get_rate_limit_status` - Check Rate Limit Status
+Get current rate limiting status including remaining queries and time to reset.
+
+#### `starfish_reset_rate_limit` - Reset Rate Limiter  
+Reset the rate limiter when starting a new task or analysis.
 
 ## 🚨 Performance Guardrails
 
-### Critical Limits
-- **20-second timeout** on all API calls
-- **5-query maximum** per session to prevent inefficient patterns
-- **Automatic enforcement** with clear error messages
+### Smart Rate Limiting
+- **Sliding Window**: 5 queries per 10 seconds (default, configurable)
+- **Automatic Expiry**: Old queries drop off naturally as time passes
+- **Real-time Status**: Check remaining quota with `starfish_get_rate_limit_status`
+- **Manual Reset**: Use `starfish_reset_rate_limit` for new tasks
+- **20-second timeout** on all API calls with proper error handling
+
+### Rate Limiting Configuration
+
+Customize rate limiting behavior via environment variables:
+
+```bash
+# Default configuration (5 queries per 10 seconds)
+RATE_LIMIT_MAX_QUERIES=5
+RATE_LIMIT_TIME_WINDOW_SECONDS=10
+RATE_LIMIT_ENABLED=true
+
+# For development (more relaxed)
+RATE_LIMIT_MAX_QUERIES=10
+RATE_LIMIT_TIME_WINDOW_SECONDS=30
+
+# For production (more strict)  
+RATE_LIMIT_MAX_QUERIES=3
+RATE_LIMIT_TIME_WINDOW_SECONDS=5
+
+# Disable entirely for testing
+RATE_LIMIT_ENABLED=false
+```
+
+### 🚨 1000-Row Warning - Incorrect Results Indicator
+
+**If you get exactly 1000 rows back, your approach is WRONG!**
+
+This indicates you hit the default limit and received incomplete data:
+
+- **For directory analysis**: Use `file_type="d"` with `rec_aggrs` field
+- **For file counts**: Use `limit=0` and read `total_found` from response  
+- **For large datasets**: Add specific filters (`size`, `mtime`, `zones`, `tags`)
+- **Never trust 1000-row results** for aggregation or analysis
+
+**Example - Wrong vs Right:**
+
+❌ **WRONG** (returns 1000 rows, incomplete):
+```json
+{"volumes_and_paths": ["prod:"], "limit": 1000}
+```
+
+✅ **RIGHT** (returns directory sizes with rec_aggrs):
+```json
+{"volumes_and_paths": ["prod:"], "file_type": "d", "depth": 1, "format_fields": "fn rec_aggrs", "sort_by": "-rec_aggrs.size"}
+```
 
 ### Query Best Practices
 
