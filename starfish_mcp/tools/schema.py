@@ -176,7 +176,7 @@ def get_starfish_query_schema() -> Dict[str, Any]:
             },
             "format_fields": {
                 "type": "string",
-                "description": "Space-separated fields to include. Default includes all common fields"
+                "description": "Space-separated fields to include in output. Common fields: 'parent_path fn size mtime atime ctime uid gid mode nlinks inode zones tags rec_aggrs'. Examples: 'fn size mtime zones' (basic), 'parent_path fn size mtime atime ctime uid gid mode tags zones rec_aggrs' (detailed). Use 'fn' not 'name' for filename. Use 'rec_aggrs' for recursive directory statistics. Default includes all common fields."
             },
             
             # Performance

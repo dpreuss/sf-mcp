@@ -2,16 +2,18 @@
 
 import asyncio
 import sys
+import logging
 from typing import Any, Sequence
 import structlog
 
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
+from mcp import stdio_server
 from mcp.types import (
     Resource,
     Tool,
     TextContent,
-    CallCallToolResult,
+    CallToolResult,
     EmbeddedResource,
 )
 
@@ -51,7 +53,7 @@ class StarfishMCPServer:
         self.tools: StarfishTools = None
         
         # Configure logging level
-        logging_level = getattr(structlog.stdlib, config.log_level, structlog.INFO)
+        logging_level = getattr(logging, config.log_level, logging.INFO)
         structlog.configure(
             wrapper_class=structlog.stdlib.BoundLogger,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -72,16 +74,17 @@ class StarfishMCPServer:
             return self.tools.get_tools()
         
         @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> CallToolResult:
+        async def handle_call_tool(name: str, arguments: dict[str, Any] | None):
             """Handle tool calls."""
             if self.tools is None:
-                return CallToolResult(
-                    content=[TextContent(
-                        type="text",
-                        text="Starfish client not initialized"
-                    )],
-                    isError=True
-                )
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Starfish client not initialized"
+                        }
+                    ]
+                }
             
             return await self.tools.handle_tool_call(name, arguments or {})
         
@@ -147,12 +150,9 @@ class StarfishMCPServer:
             
             logger.info("Starting MCP server")
             
-            # Run the server
-            async with self.server.run_as_async_context_manager(
-                stdin=sys.stdin.buffer,
-                stdout=sys.stdout.buffer
-            ) as streams:
-                await streams.run()
+            # Run the server using the current API
+            async with stdio_server() as (read_stream, write_stream):
+                await self.server.run(read_stream, write_stream, options)
                 
         except Exception as e:
             logger.error(

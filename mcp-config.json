@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "starfish": {
+      "command": "/Users/Don/src/sf-mcp/venv/bin/python",
+      "args": ["-m", "starfish_mcp.server"],
+      "cwd": "/Users/Don/src/sf-mcp",
+      "env": {
+        "STARFISH_API_ENDPOINT": "https://sf-redashdev.sfish.dev/api",
+        "STARFISH_USERNAME": "demo",
+        "STARFISH_PASSWORD": "demo",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

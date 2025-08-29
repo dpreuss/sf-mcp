@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timedelta
 
 from starfish_mcp.config import StarfishConfig
-from starfish_mcp.models import StarfishEntry, VolumeInfo, StarfishQueryResponse
+from starfish_mcp.models import StarfishEntry, VolumeInfo, StarfishQueryResponse, StarfishZoneDetails
 
 
 @pytest.fixture
@@ -167,12 +167,18 @@ def sample_collections() -> List[str]:
 def sample_tagset_response() -> Dict[str, Any]:
     """Sample tagset response for testing."""
     return {
-        "tag_names": [
-            {"name": "TestData"},
-            {"name": "Documents"}, 
-            {"name": "Analytics"},
-            {"name": "Configuration"}
-        ]
+        "name": "Collections",
+        "zone_ids": [1, 2],
+        "inheritable": True,
+        "pinnable": False,
+        "action": "CLASSIFICATION",
+        "tags": [
+            {"id": 1, "name": "TestData"},
+            {"id": 2, "name": "Documents"}, 
+            {"id": 3, "name": "Analytics"},
+            {"id": 4, "name": "Configuration"}
+        ],
+        "zones": []  # Will be populated with zone details if needed
     }
 
 
@@ -297,15 +303,20 @@ class MockStarfishClient:
         self.request_log.append({"method": "list_collections"})
         return self.sample_collections.copy()
     
-    async def get_tagset(self, tagset_name: str) -> Dict[str, Any]:
+    async def get_tagset(self, tagset_name: str, limit: int = 1000, 
+                        with_private: bool = True) -> Dict[str, Any]:
         """Mock get tagset method."""
-        self.request_log.append({"method": "get_tagset", "tagset_name": tagset_name})
+        self.request_log.append({
+            "method": "get_tagset", 
+            "tagset_name": tagset_name,
+            "limit": limit,
+            "with_private": with_private
+        })
         return self.sample_tagset_response
     
-    async def list_zones(self) -> List[Dict[str, Any]]:
+    async def list_zones(self) -> List[StarfishZoneDetails]:
         """Mock list zones method."""
         self.request_log.append({"method": "list_zones"})
-        from starfish_mcp.models import StarfishZoneDetails
         return [StarfishZoneDetails(**zone) for zone in self.sample_zones]
     
     def _filter_entries(self, query: str) -> List[Dict[str, Any]]:

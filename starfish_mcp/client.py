@@ -185,8 +185,9 @@ class StarfishClient:
     
     async def _request(self, method: str, endpoint: str, 
                       params: Optional[Dict[str, Any]] = None,
+                      timeout_seconds: int = 20,
                       **kwargs) -> Dict[str, Any]:
-        """Make authenticated request to Starfish API."""
+        """Make authenticated request to Starfish API with timeout guardrail."""
         await self._ensure_session()
         
         # Get valid token
@@ -204,14 +205,18 @@ class StarfishClient:
         
         try:
             logger.debug(
-                "Making API request",
+                "Making API request with timeout",
                 method=method,
                 url=url if not params else url,
-                params=params
+                params=params,
+                timeout_seconds=timeout_seconds
             )
             
-            async with self.session.request(
-                method, url, params=params, headers=headers, **kwargs
+            # Apply timeout guardrail
+            async with asyncio.wait_for(
+                self.session.request(
+                    method, url, params=params, headers=headers, **kwargs
+                ), timeout=timeout_seconds
             ) as response:
                 
                 logger.debug(
@@ -252,6 +257,18 @@ class StarfishClient:
 
                     )
                 
+        except asyncio.TimeoutError:
+            logger.error(
+                "API request timed out",
+                method=method,
+                endpoint=endpoint,
+                timeout_seconds=timeout_seconds
+            )
+            raise StarfishError(
+                code="REQUEST_TIMEOUT",
+                message=f"API request timed out after {timeout_seconds} seconds",
+                details={"timeout_seconds": timeout_seconds, "endpoint": endpoint}
+            )
         except aiohttp.ClientError as e:
             raise StarfishError(
                 code="CONNECTION_FAILED",
@@ -541,6 +558,34 @@ class StarfishClient:
                 details={"error": str(e)}
             )
 
+    async def list_tagsets(self) -> List[Dict[str, Any]]:
+        """List all available tagsets."""
+        logger.info("Listing tagsets")
+        
+        try:
+            # Call /tagset/ endpoint without ID to get all tagsets
+            tagsets_data = await self._request("GET", "/tagset/")
+            
+            logger.info(
+                "Tagsets listed successfully",
+                total_tagsets=len(tagsets_data) if isinstance(tagsets_data, list) else 0
+            )
+            
+            return tagsets_data if isinstance(tagsets_data, list) else []
+            
+        except StarfishError:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to list tagsets",
+                error=str(e)
+            )
+            raise StarfishError(
+                code="LIST_TAGSETS_FAILED",
+                message="Failed to list tagsets",
+                details={"error": str(e)}
+            )
+
     async def get_tagset(self, tagset_name: str, limit: int = 1000, 
                         with_private: bool = True) -> Dict[str, Any]:
         """Get tags from a specific tagset."""
@@ -579,6 +624,64 @@ class StarfishClient:
                 code="GET_TAGSET_FAILED",
                 message="Failed to get tagset",
                 details={"tagset_name": tagset_name, "error": str(e)}
+            )
+
+    async def get_zone(self, zone_id: int) -> Dict[str, Any]:
+        """Get detailed information about a specific zone by ID."""
+        logger.info("Getting zone details", zone_id=zone_id)
+        
+        try:
+            zone_data = await self._request("GET", f"/zone/{zone_id}/")
+            
+            logger.info(
+                "Zone retrieved successfully",
+                zone_id=zone_id,
+                zone_name=zone_data.get("name")
+            )
+            
+            return zone_data
+            
+        except StarfishError:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get zone",
+                zone_id=zone_id,
+                error=str(e)
+            )
+            raise StarfishError(
+                code="GET_ZONE_FAILED",
+                message="Failed to get zone",
+                details={"zone_id": zone_id, "error": str(e)}
+            )
+
+    async def get_volume(self, volume_id: int) -> Dict[str, Any]:
+        """Get detailed information about a specific volume by ID."""
+        logger.info("Getting volume details", volume_id=volume_id)
+        
+        try:
+            volume_data = await self._request("GET", f"/volume/{volume_id}/")
+            
+            logger.info(
+                "Volume retrieved successfully",
+                volume_id=volume_id,
+                volume_name=volume_data.get("vol")
+            )
+            
+            return volume_data
+            
+        except StarfishError:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get volume",
+                volume_id=volume_id,
+                error=str(e)
+            )
+            raise StarfishError(
+                code="GET_VOLUME_FAILED",
+                message="Failed to get volume",
+                details={"volume_id": volume_id, "error": str(e)}
             )
 
     async def list_zones(self) -> List[StarfishZoneDetails]:

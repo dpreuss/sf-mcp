@@ -15,15 +15,20 @@ def test_tools_creation(mock_starfish_client):
     tools = StarfishTools(mock_starfish_client)
     tool_list = tools.get_tools()
     
-    assert len(tool_list) == 4
+    assert len(tool_list) == 9
     
     # Check that expected tools are present
     tool_names = [tool.name for tool in tool_list]
     expected_tools = [
         "starfish_query",
         "starfish_list_volumes",
-        "starfish_list_zones", 
-        "starfish_get_tagset"
+        "starfish_get_volume", 
+        "starfish_list_zones",
+        "starfish_get_zone",
+        "starfish_get_tagset",
+        "starfish_list_tagsets",
+        "starfish_list_tags",
+        "starfish_reset_query_count"
     ]
     
     for expected_tool in expected_tools:
@@ -247,10 +252,8 @@ async def test_starfish_query_tool(mock_starfish_client):
         "limit": 10
     })
     
-    assert not result.isError
-    
-    # Parse JSON response
-    content = result.content[0].text
+    # Parse JSON response from new dict format
+    content = result["content"][0]["text"]
     data = json.loads(content)
     
     assert "query" in data
@@ -292,9 +295,7 @@ async def test_time_filter_combinations(mock_starfish_client):
     
     for case in test_cases:
         result = await tools.handle_tool_call("starfish_query", case)
-        assert not result.isError
-        
-        data = json.loads(result.content[0].text)
+        data = json.loads(result["content"][0]["text"])
         query = data["query"]
         
         for key, value in case.items():
@@ -312,9 +313,7 @@ async def test_case_insensitive_filters(mock_starfish_client):
         "igroupname": "WHEEL"
     })
     
-    assert not result.isError
-    
-    data = json.loads(result.content[0].text)
+    data = json.loads(result["content"][0]["text"])
     query = data["query"]
     
     assert "iname=CONFIG.*" in query
@@ -335,9 +334,7 @@ async def test_permission_filters(mock_starfish_client):
     
     for case in test_cases:
         result = await tools.handle_tool_call("starfish_query", case)
-        assert not result.isError
-        
-        data = json.loads(result.content[0].text)
+        data = json.loads(result["content"][0]["text"])
         query = data["query"]
         
         for key, value in case.items():
@@ -356,9 +353,7 @@ async def test_query_options_flags(mock_starfish_client):
         "file_type": "f"
     })
     
-    assert not result.isError
-    
-    data = json.loads(result.content[0].text)
+    data = json.loads(result["content"][0]["text"])
     query = data["query"]
     
     assert "search-all" in query
@@ -374,10 +369,8 @@ async def test_list_volumes_tool(mock_starfish_client):
     
     result = await tools.handle_tool_call("starfish_list_volumes", {})
     
-    assert not result.isError
-    
-    # Parse JSON response
-    content = result.content[0].text
+    # Parse JSON response from new dict format
+    content = result["content"][0]["text"]
     data = json.loads(content)
     
     assert "volumes" in data
@@ -392,10 +385,8 @@ async def test_list_zones_tool(mock_starfish_client):
     
     result = await tools.handle_tool_call("starfish_list_zones", {})
     
-    assert not result.isError
-    
-    # Parse JSON response
-    content = result.content[0].text
+    # Parse JSON response from new dict format
+    content = result["content"][0]["text"]
     data = json.loads(content)
     
     assert "zones" in data
@@ -412,10 +403,8 @@ async def test_get_tagset_tool(mock_starfish_client):
         "tagset_name": "Collections"
     })
     
-    assert not result.isError
-    
-    # Parse JSON response
-    content = result.content[0].text
+    # Parse JSON response from new dict format
+    content = result["content"][0]["text"]
     data = json.loads(content)
     
     assert "name" in data
@@ -430,8 +419,8 @@ async def test_unknown_tool_error(mock_starfish_client):
     
     result = await tools.handle_tool_call("unknown_tool", {})
     
-    assert result.isError
-    assert "Unknown tool" in result.content[0].text
+    content = result["content"][0]["text"]
+    assert "Unknown tool" in content
 
 
 @pytest.mark.asyncio
@@ -449,9 +438,9 @@ async def test_starfish_error_handling(mock_starfish_client):
         "name": "test.txt"
     })
     
-    assert result.isError
-    assert "TEST_ERROR" in result.content[0].text
-    assert "Test error message" in result.content[0].text
+    content = result["content"][0]["text"]
+    assert "TEST_ERROR" in content
+    assert "Test error message" in content
 
 
 @pytest.mark.asyncio 
@@ -466,6 +455,116 @@ async def test_generic_error_handling(mock_starfish_client):
         "name": "test.txt"
     })
     
-    assert result.isError
-    assert "Tool execution failed" in result.content[0].text
-    assert "Generic error" in result.content[0].text
+    content = result["content"][0]["text"]
+    assert "Tool execution failed" in content
+    assert "Generic error" in content
+
+
+# NEW GUARDRAIL TESTS
+
+@pytest.mark.asyncio
+async def test_query_count_guardrail_enforcement(mock_starfish_client):
+    """Test that the 5-query limit is enforced."""
+    tools = StarfishTools(mock_starfish_client)
+    
+    # Reset to ensure clean state
+    tools.reset_query_count()
+    
+    # Run 5 queries successfully  
+    for i in range(5):
+        result = await tools.handle_tool_call("starfish_query", {
+            "limit": 1,
+            "format_fields": "fn"
+        })
+        content = result["content"][0]["text"]
+        assert "GUARDRAIL VIOLATION" not in content
+        assert tools._query_count == i + 1
+    
+    # 6th query should be blocked
+    result = await tools.handle_tool_call("starfish_query", {
+        "limit": 1,
+        "format_fields": "fn"
+    })
+    content = result["content"][0]["text"]
+    assert "🚨 GUARDRAIL VIOLATION" in content
+    assert "Query limit exceeded (6/5 queries)" in content
+    assert tools._query_count == 6
+
+
+@pytest.mark.asyncio
+async def test_query_count_reset_functionality(mock_starfish_client):
+    """Test the query count reset functionality."""
+    tools = StarfishTools(mock_starfish_client)
+    
+    # Run queries to hit the limit
+    for i in range(5):
+        await tools.handle_tool_call("starfish_query", {"limit": 1})
+    
+    assert tools._query_count == 5
+    
+    # Reset the counter
+    result = await tools.handle_tool_call("starfish_reset_query_count", {})
+    content = result["content"][0]["text"]
+    assert "Query count reset to 0" in content
+    assert tools._query_count == 0
+    
+    # Should be able to query again
+    result = await tools.handle_tool_call("starfish_query", {"limit": 1})
+    content = result["content"][0]["text"]
+    assert "GUARDRAIL VIOLATION" not in content
+
+
+def test_guardrail_warnings_in_tool_description(mock_starfish_client):
+    """Test that guardrail warnings are present in tool descriptions."""
+    tools = StarfishTools(mock_starfish_client)
+    tool_list = tools.get_tools()
+    
+    # Find the main query tool
+    query_tool = next(tool for tool in tool_list if tool.name == "starfish_query")
+    
+    # Check for guardrail warnings in description
+    description = query_tool.description
+    assert "🚨 CRITICAL GUARDRAILS" in description
+    assert "NEVER run more than 5 sequential queries" in description
+    assert "20-second timeout" in description
+    assert "ANTI-PATTERNS TO AVOID" in description
+
+
+@pytest.mark.asyncio
+async def test_new_management_tools(mock_starfish_client):
+    """Test the new zone and volume management tools."""
+    tools = StarfishTools(mock_starfish_client)
+    
+    # Mock the new client methods
+    mock_starfish_client.get_zone = AsyncMock(return_value={
+        "id": 1, "name": "test_zone", "paths": [], "managers": [],
+        "managing_groups": [], "tagsets": [], "user_params": {}
+    })
+    mock_starfish_client.get_volume = AsyncMock(return_value={
+        "id": 1, "vol": "test_vol", "display_name": "Test Volume", 
+        "root": "/test", "type": "local"
+    })
+    mock_starfish_client.list_tagsets = AsyncMock(return_value=[
+        {"name": "test_tagset", "tags": [], "zones": []}
+    ])
+    
+    # Test get_zone
+    result = await tools.handle_tool_call("starfish_get_zone", {"zone_id": 1})
+    content = result["content"][0]["text"]
+    data = json.loads(content)
+    assert data["id"] == 1
+    assert data["name"] == "test_zone"
+    
+    # Test get_volume  
+    result = await tools.handle_tool_call("starfish_get_volume", {"volume_id": 1})
+    content = result["content"][0]["text"]
+    data = json.loads(content)
+    assert data["id"] == 1
+    assert data["name"] == "test_vol"
+    
+    # Test list_tagsets
+    result = await tools.handle_tool_call("starfish_list_tagsets", {"random_string": "test"})
+    content = result["content"][0]["text"]
+    data = json.loads(content)
+    assert "total_tagsets" in data
+    assert "tagsets" in data

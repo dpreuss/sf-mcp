@@ -1,0 +1,49 @@
+# Starfish MCP Server for Cursor IDE
+
+## MCP Configuration
+Add this MCP server to your Cursor settings:
+
+1. Open Cursor Settings (Cmd/Ctrl + ,)
+2. Search for "MCP" 
+3. Add this configuration to your MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "starfish": {
+      "command": "python",
+      "args": ["-m", "starfish_mcp.server"],
+      "cwd": "/Users/Don/src/sf-mcp",
+      "env": {
+        "STARFISH_API_ENDPOINT": "https://sf-redashdev.sfish.dev/api",
+        "STARFISH_USERNAME": "demo", 
+        "STARFISH_PASSWORD": "demo"
+      }
+    }
+  }
+}
+```
+
+## Available Tools:
+
+### starfish_query - Comprehensive file search
+- Search by name, tags, size, permissions, timestamps
+- 19 different filter parameters implemented
+- Example: Find large PDF files: `{"file_type": "f", "name": "*.pdf", "size": ">10MB"}`
+
+### starfish_list_volumes - Volume management
+- List all Starfish storage volumes
+- Shows capacity, mount points, agent details
+
+### starfish_list_zones - Zone management  
+- List storage zones with paths and permissions
+- Shows managers, tagsets, user parameters
+
+### starfish_get_tagset - Tag management
+- Get tags from specific tagsets
+- Useful for understanding data organization
+
+## Development Commands:
+- `make test` - Run comprehensive test suite
+- `make run` - Start MCP server locally
+- `python demo.py` - Test functionality with mock data

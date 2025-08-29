@@ -41,7 +41,18 @@ class StarfishEntry(BaseModel):
     tags_inherited_str: Optional[str] = Field(None, alias="tags_inherited", description="Inherited tags (comma-separated)")
     zones: Optional[List["StarfishZone"]] = Field(None, description="Zone information")
     
-    model_config = {"populate_by_name": True}
+    # Aggregation fields for directories
+    aggrs: Optional[Dict[str, Any]] = Field(None, description="Local aggregates (immediate children: by_ext, by_uid, by_gid, totals, etc.)")
+    rec_aggrs: Optional[Dict[str, Any]] = Field(None, description="Recursive aggregates (entire subtree summary: total blocks, dirs, files, size)")
+    
+    # Additional directory metadata
+    entries_count: Optional[int] = Field(None, description="Number of entries in directory")
+    logical_size: Optional[int] = Field(None, description="Logical size including all content")
+    physical_size: Optional[int] = Field(None, description="Physical size on disk")
+    cost: Optional[float] = Field(None, description="Storage cost for this entry")
+    depth: Optional[int] = Field(None, description="Directory depth from root")
+    
+    model_config = {"populate_by_name": True, "extra": "allow"}
     
     @property
     def is_file(self) -> bool:
