@@ -212,12 +212,14 @@ class StarfishClient:
                 timeout_seconds=timeout_seconds
             )
             
-            # Apply timeout guardrail
-            async with asyncio.wait_for(
+            # Apply timeout guardrail - wrap the entire request
+            response = await asyncio.wait_for(
                 self.session.request(
                     method, url, params=params, headers=headers, **kwargs
                 ), timeout=timeout_seconds
-            ) as response:
+            )
+            
+            async with response:
                 
                 logger.debug(
                     "API response received",
